@@ -52,7 +52,7 @@ const char* miner_thread(const char* blockheader, const char* targetstr,
         .version = YESPOWER_1_0,
         .N = 2048,
         .r = 8,
-        .pers = "YespowerTIDE",
+        .pers = NULL,
         .perslen = 12
     };
 

@@ -31,7 +31,6 @@
 
 #include "insecure_memzero.h"
 #include "sysendian.h"
-#include "miner.h"
 
 #include "sha256.h"
 

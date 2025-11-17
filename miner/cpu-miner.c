@@ -56,8 +56,8 @@ const char* miner_thread(const char* blockheader, const char* targetstr,
 
 	yespower_params_t params = {
 		.version = YESPOWER_1_0,
-		.N = 4096,
-		.r = 16,
+		.N = 2048,     /* <-- YESPOWERTIDE */
+		.r = 8,        /* <-- YESPOWERTIDE */
 		.pers = NULL,
 		.perslen = 0
 	};

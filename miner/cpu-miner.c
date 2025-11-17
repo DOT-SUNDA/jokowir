@@ -1,96 +1,98 @@
 /*
- * cpu-miner.c – YESPOWERTIDE compatible with miner.h (NO SHA256D)
+ * Copyright 2010 Jeff Garzik
+ * Copyright 2012-2014 pooler
+ * Copyright 2017 ohac
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the Free
+ * Software Foundation; either version 2 of the License, or (at your option)
+ * any later version.  See COPYING for more details.
  */
 
+#define _GNU_SOURCE
+
 #include <stdio.h>
-#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
-
+#include <inttypes.h>
+#include <unistd.h>
+#include <sys/time.h>
+#include <time.h>
+#include <errno.h>
+#include <signal.h>
+#include <sys/resource.h>
+#if HAVE_SYS_SYSCTL_H
+#include <sys/types.h>
+#if HAVE_SYS_PARAM_H
+#include <sys/param.h>
+#include <sys/sysctl.h>
+#endif
+#endif
 #include "miner.h"
 #include "sysendian.h"
 #include "yespower.h"
 
-/* Dummy sha256d_str (not required by miner) */
-char* sha256d_str(const char* input)
+static inline int pretest(const uint32_t *hash, const uint32_t *target)
 {
-    static char out[65];
-    for (int i=0;i<64;i++) out[i] = '0';
-    out[64] = 0;
-    return out;
+	return hash[7] < target[7];
 }
 
-/* pretest */
-static inline int pretest(const uint32_t *h, const uint32_t *t)
-{
-    return h[7] < t[7];
-}
-
-/* Miner Main */
 const char* miner_thread(const char* blockheader, const char* targetstr,
-        uint32_t first_nonce)
+		uint32_t first_nonce)
 {
-    static char rv[8 + 1 + 64 + 1 + 64 + 1];
+	char pdata[80];
+	uint32_t target[8];
+	static char rv[8 + 1 + 64 + 1 + 64 + 1];
+	uint32_t max_nonce = 0xffffffffU;
+	uint32_t data[28] __attribute__((aligned(128)));
+	uint32_t hash[8] __attribute__((aligned(32)));
+	uint32_t n = 0;
+	uint32_t n2 = 0;
+	double diff;
+	uint32_t headerlen = 80;
 
-    uint8_t headerbin[80];
-    uint32_t data[20];
-    uint32_t hash[8];
-    uint32_t target[8];
+	//uint32_t version = be32dec(&blockheader[0]); // version
 
-    uint32_t n = first_nonce - 1;
-    uint32_t n2 = 0;
-    double diff;
-    uint32_t max_nonce = 0xffffffffU;
+	yespower_params_t params = {
+		.version = YESPOWER_1_0,
+		.N = 4096,
+		.r = 16,
+		.pers = NULL,
+		.perslen = 0
+	};
 
-    /* YESPOWERTIDE PARAMS */
-    yespower_params_t params = {
-        .version = YESPOWER_1_0,
-        .N = 2048,
-        .r = 8,
-        .pers = NULL,
-        .perslen = 0
-    };
+	hex2bin((void*)pdata, blockheader, headerlen);
+	diff = atof(targetstr);
+	diff_to_target(target, diff / 65536.0);
 
-    /* hex blockheader → bytes */
-    hex2bin(headerbin, blockheader, 80);
+	n = first_nonce - 1;
 
-    /* difficulty → target */
-    diff = atof(targetstr);
-    diff_to_target(target, diff / 65536.0);
-
-    /* parse header words */
-    for (int i=0;i<20;i++)
-        data[i] = be32dec(&headerbin[i*4]);
-
-    /* mining loop */
-    do {
-        data[19] = ++n;
-
-        yespower_tls((const uint8_t*)data, 80, &params,
-                     (yespower_binary_t*)hash);
-
-        if (pretest(hash, target) && fulltest(hash, target)) {
-
-            n2 = n;
-
-            /* nonce → hex */
-            bin2hex(rv, (uint8_t*)&n2, 4);
-            rv[8] = ',';
-
-            /* hash → hex */
-            bin2hex(&rv[9], (uint8_t*)hash, 32);
-            rv[9+64] = ',';
-
-            /* target → hex */
-            bin2hex(&rv[10+64], (uint8_t*)target, 32);
-            rv[10+64+64] = 0;
-
-            return rv;
-        }
-
-    } while (n < max_nonce);
-
-    rv[0] = 0;
-    return rv;
+	data[0] = be32dec(&pdata[0]); // version
+	for (int i = 0; i < 8; i++) { // prev hash
+		data[i+1] = be32dec(&pdata[(i+1)*4]);
+	}
+	for (int i = 0; i < 8; i++) { // merkle root
+		data[9 + i] = le32dec(&pdata[(i+9)*4]);
+	}
+	for (int i = 17; i < 20; i++) {
+		data[i] = be32dec(&pdata[i*4]);
+	}
+	do {
+		be32enc(&data[19], ++n);
+		yespower_tls((const uint8_t *) data, headerlen, &params,
+			     (yespower_binary_t *) hash);
+		if (pretest(hash, target) && fulltest(hash, target)) {
+			n2 = n;
+			bin2hex(rv, (void*)&n2, 4);
+			rv[8] = ',';
+			bin2hex(&rv[8+1], (void*)hash, 32);
+			rv[8+1+64] = ',';
+			bin2hex(&rv[8+1+64+1], (void*)target, 32);
+			rv[8+1+64+1+64] = 0;
+			return rv;
+		}
+	} while (n < max_nonce);
+	rv[0] = 0;
+	return rv;
 }

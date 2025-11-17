@@ -1,5 +1,5 @@
 /*
- * cpu-miner.c – YESPOWERTIDE + compatible with miner.h / sha256.c / util.c
+ * cpu-miner.c – YESPOWERTIDE compatible with miner.h (NO SHA256D)
  */
 
 #include <stdio.h>
@@ -12,42 +12,22 @@
 #include "sysendian.h"
 #include "yespower.h"
 
-/* ------------------------------------------------------------
-   Double SHA256 → string hex output
-   (Compatible with miner.h where sha256_init takes uint32_t *)
------------------------------------------------------------- */
-
+/* Dummy sha256d_str (not required by miner) */
 char* sha256d_str(const char* input)
 {
     static char out[65];
-    uint8_t hash1[32], hash2[32];
-    uint32_t ctx[8];
-
-    /* SHA256 #1 */
-    sha256_init(ctx);
-    sha256_update(ctx, (const uint8_t*)input, strlen(input));
-    sha256_final(ctx, hash1);
-
-    /* SHA256 #2 */
-    sha256_init(ctx);
-    sha256_update(ctx, hash1, 32);
-    sha256_final(ctx, hash2);
-
-    bin2hex(out, hash2, 32);
+    for (int i=0;i<64;i++) out[i] = '0';
+    out[64] = 0;
     return out;
 }
 
-/* ------------------------------------------------------------
-   Pretest (quick reject)
------------------------------------------------------------- */
+/* pretest */
 static inline int pretest(const uint32_t *h, const uint32_t *t)
 {
     return h[7] < t[7];
 }
 
-/* ------------------------------------------------------------
-   YESPOWERTIDE Miner
------------------------------------------------------------- */
+/* Miner Main */
 const char* miner_thread(const char* blockheader, const char* targetstr,
         uint32_t first_nonce)
 {
@@ -72,18 +52,18 @@ const char* miner_thread(const char* blockheader, const char* targetstr,
         .perslen = 0
     };
 
-    /* Convert blockheader HEX → bytes */
+    /* hex blockheader → bytes */
     hex2bin(headerbin, blockheader, 80);
 
-    /* Difficulty → target */
+    /* difficulty → target */
     diff = atof(targetstr);
     diff_to_target(target, diff / 65536.0);
 
-    /* Parse header */
+    /* parse header words */
     for (int i=0;i<20;i++)
         data[i] = be32dec(&headerbin[i*4]);
 
-    /* Main loop */
+    /* mining loop */
     do {
         data[19] = ++n;
 
@@ -94,15 +74,15 @@ const char* miner_thread(const char* blockheader, const char* targetstr,
 
             n2 = n;
 
-            /* nonce hex */
+            /* nonce → hex */
             bin2hex(rv, (uint8_t*)&n2, 4);
             rv[8] = ',';
 
-            /* hash hex */
+            /* hash → hex */
             bin2hex(&rv[9], (uint8_t*)hash, 32);
             rv[9+64] = ',';
 
-            /* target hex */
+            /* target → hex */
             bin2hex(&rv[10+64], (uint8_t*)target, 32);
             rv[10+64+64] = 0;
 
